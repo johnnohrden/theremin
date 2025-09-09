@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>John's Hand-Gesture Musical Instrument</title>
+    
+    <!-- 
+    SETUP INSTRUCTIONS:
+    1. Open this HTML file in Chrome or Edge (recommended browsers)
+    2. Allow camera access when prompted
+    3. Wait for MediaPipe to load (loading indicator will show)
+    4. Start the application and begin making music with your hands!
+    
+    USAGE:
+    - Index finger Y-position controls pitch (higher = higher notes)
+    - Index finger X-position controls tempo (right = faster repetition)
+    - Make a fist to mute/unmute notes
+    - Use both hands for independent note streams
+    - Adjust volume, reverb, chord type, and scale from the control panel
+    -->
+    
+    <style>
+        /* Apple-inspired typography and design system */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: "Helvetica Neue", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: #f8f8f8;
+            color: #1d1d1f;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+        }
+        
+        /* Main layout - 70% video, 30% controls */
+        .video-container {
+            flex: 0 0 70%;
+            position: relative;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .controls-panel {
+            flex: 0 0 30%;
+            background: #ffffff;
+            padding: 24px;
+            overflow-y: auto;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+        }
+        
+        /* Video and canvas styling */
+        #videoElement {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror the video */
+        }
+        
+        #canvasElement {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            transform: scaleX(-1); /* Mirror the canvas */
+        }
+        
+        /* Loading and status indicators */
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            z-index: 1000;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-top: 3px solid #007aff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .status-message {
+            font-size: 16px;
+            font-weight: 400;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+        
+        .status-detail {
+            font-size: 14px;
+            font-weight: 300;
+            opacity: 0.8;
+            text-align: center;
+        }
+        
+        /* Typography hierarchy */
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: #1d1d1f;
+        }
+        
+        h2 {
+            font-size: 18px;
+            font-weight: 500;
+            margin: 20px 0 12px 0;
+            color: #1d1d1f;
+        }
+        
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 400;
+            margin-bottom: 6px;
+            color: #1d1d1f;
+        }
+        
+        .help-text {
+            font-size: 13px;
+            font-weight: 300;
+            color: #8e8e93;
+            margin-top: 4px;
+        }
+        
+        /* Control elements */
+        .control-group {
+            margin-bottom: 20px;
+        }
+        
+        button {
+            background: #007aff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            width: 100%;
+            font-family: inherit;
+        }
+        
+        button:hover {
+            background: #0056cc;
+            transform: translateY(-1px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            background: #c7c7cc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .stop-button {
+            background: #ff3b30;
+            margin-bottom: 20px;
+        }
+        
+        .stop-button:hover {
+            background: #d70015;
+        }
+        
+        select, input[type="range"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d1d6;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+            background: white;
+        }
+        
+        select:focus, input[type="range"]:focus {
+            outline: none;
+            border-color: #007aff;
+            box-shadow: 0 0 0 3px rgba(0,122,255,0.1);
+        }
+        
+        input[type="range"] {
+            -webkit-appearance: none;
+            height: 6px;
+            background: #d1d1d6;
+            border-radius: 3px;
+            padding: 0;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #007aff;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        
+        /* Status indicators */
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        
+        .status-indicator.active { background: #34c759; }
+        .status-indicator.inactive { background: #c7c7cc; }
+        .status-indicator.error { background: #ff3b30; }
+        
+        /* Hand status display */
+        .hand-status {
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 400;
+            position: absolute;
+            z-index: 100;
+            pointer-events: none;
+            min-width: 120px;
+        }
+        
+        .hand-status.left-hand {
+            top: 20px;
+            left: 20px;
+        }
+        
+        .hand-status.right-hand {
+            top: 20px;
+            right: 20px;
+        }
+        
+        .note-display {
+            font-weight: 600;
+            color: #007aff;
+        }
+        
+        .muted {
+            opacity: 0.6;
+            color: #ff3b30 !important;
+        }
+        
+        /* Error states */
+        .error-message {
+            background: #ff3b30;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+            
+            .video-container {
+                flex: 0 0 60%;
+            }
+            
+            .controls-panel {
+                flex: 0 0 40%;
+                padding: 16px;
+            }
+            
+            h1 {
+                font-size: 24px;
+                margin-bottom: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="video-container">
+        <video id="videoElement" autoplay muted></video>
+        <canvas id="canvasElement"></canvas>
+        
+        <!-- Loading overlay -->
+        <div id="loadingOverlay" class="loading-overlay">
+            <div class="spinner"></div>
+            <div class="status-message">Loading MediaPipe...</div>
+            <div class="status-detail">Initializing hand tracking system</div>
+        </div>
+        
+        <!-- Hand status displays -->
+        <div id="leftHandStatus" class="hand-status left-hand" style="display: none;">
+            <div>Left Hand</div>
+            <div class="note-display" id="leftHandNote">-</div>
+        </div>
+        
+        <div id="rightHandStatus" class="hand-status right-hand" style="display: none;">
+            <div>Right Hand</div>
+            <div class="note-display" id="rightHandNote">-</div>
+        </div>
+    </div>
+    
+    <div class="controls-panel">
+        <h1>Hand-Gesture Instrument</h1>
+        
+        <div id="errorContainer"></div>
+        
+        <div class="control-group">
+            <button id="startButton" disabled>
+                <span class="status-indicator inactive"></span>
+                Start Instrument
+            </button>
+        </div>
+        
+        <div class="control-group">
+            <button id="stopButton" class="stop-button" style="display: none;">
+                Emergency Stop
+            </button>
+        </div>
+        
+        <div class="control-group">
+            <label for="volumeSlider">Volume</label>
+            <input type="range" id="volumeSlider" min="0" max="100" value="70">
+            <div class="help-text">Master volume control</div>
+        </div>
+        
+        <div class="control-group">
+            <label for="reverbSlider">Reverb</label>
+            <input type="range" id="reverbSlider" min="0" max="100" value="30">
+            <div class="help-text">Spatial audio depth</div>
+        </div>
+        
+        <h2>Musical Settings</h2>
+        
+        <div class="control-group">
+            <label for="chordSelect">Chord Type</label>
+            <select id="chordSelect">
+                <option value="major">Major</option>
+                <option value="minor">Minor</option>
+                <option value="seventh">7th</option>
+                <option value="sus2">Sus2</option>
+                <option value="sus4">Sus4</option>
+                <option value="diminished">Diminished</option>
+                <option value="augmented">Augmented</option>
+            </select>
+            <div class="help-text">Harmonization type</div>
+        </div>
+        
+        <div class="control-group">
+            <label for="scaleSelect">Scale</label>
+            <select id="scaleSelect">
+                <option value="major">Major</option>
+                <option value="minor">Minor</option>
+                <option value="pentatonic">Pentatonic</option>
+                <option value="blues">Blues</option>
+                <option value="chromatic">Chromatic</option>
+            </select>
+            <div class="help-text">Note constraint system</div>
+        </div>
+        
+        <h2>Instructions</h2>
+        <ul style="font-size: 13px; line-height: 1.4; color: #8e8e93; padding-left: 16px;">
+            <li>Y-position controls pitch (up = higher, 7 discrete notes)</li>
+            <li>X-position controls tempo (right = faster)</li>
+            <li>Each note triggers 7-note harmony</li>
+            <li>Make fist to mute/unmute</li>
+            <li>Use both hands independently</li>
+            <li>Change instruments for different sounds</li>
+        </ul>
+    </div>
+    
+    <!-- Load MediaPipe and Tone.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    
+    <script>
+        class HandGestureInstrument {
+            constructor() {
+                this.isInitialized = false;
+                this.isRunning = false;
+                this.camera = null;
+                this.hands = null;
+                this.results = null;
+                
+                // Audio system
+                this.synth = null;
+                this.reverb = null;
+                this.volume = null;
+                this.activeNotes = new Map(); // Track active notes per hand
+                this.noteTriggers = new Map(); // Track note triggers
+                
+                // Hand tracking state
+                this.handStates = {
+                    left: { detected: false, fist: false, note: null, x: 0, y: 0, confidence: 0 },
+                    right: { detected: false, fist: false, note: null, x: 0, y: 0, confidence: 0 }
+                };
+                
+                // Musical settings
+                this.scales = {
+                    major: [0, 2, 4, 5, 7, 9, 11],
+                    minor: [0, 2, 3, 5, 7, 8, 10],
+                    pentatonic: [0, 2, 4, 7, 9],
+                    blues: [0, 3, 5, 6, 7, 10],
+                    chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+                };
+                
+                this.chords = {
+                    major: [0, 4, 7],
+                    minor: [0, 3, 7],
+                    seventh: [0, 4, 7, 10],
+                    sus2: [0, 2, 7],
+                    sus4: [0, 5, 7],
+                    diminished: [0, 3, 6],
+                    augmented: [0, 4, 8]
+                };
+                
+                // DOM elements
+                this.videoElement = document.getElementById('videoElement');
+                this.canvasElement = document.getElementById('canvasElement');
+                this.loadingOverlay = document.getElementById('loadingOverlay');
+                this.startButton = document.getElementById('startButton');
+                this.stopButton = document.getElementById('stopButton');
+                this.errorContainer = document.getElementById('errorContainer');
+                
+                // Hand status displays
+                this.leftHandStatus = document.getElementById('leftHandStatus');
+                this.rightHandStatus = document.getElementById('rightHandStatus');
+                this.leftHandNote = document.getElementById('leftHandNote');
+                this.rightHandNote = document.getElementById('rightHandNote');
+                
+                // Control elements
+                this.volumeSlider = document.getElementById('volumeSlider');
+                this.reverbSlider = document.getElementById('reverbSlider');
+                this.chordSelect = document.getElementById('chordSelect');
+                this.scaleSelect = document.getElementById('scaleSelect');
+                
+                this.init();
+            }
+            
+            async init() {
+                try {
+                    this.setupEventListeners();
+                    await this.initializeAudio();
+                    await this.initializeMediaPipe();
+                    await this.initializeCamera();
+                    this.updateLoadingStatus('Ready to start!', 'Click Start Instrument to begin');
+                    this.enableStartButton();
+                } catch (error) {
+                    this.handleError('Initialization failed', error);
+                }
+            }
+            
+            setupEventListeners() {
+                // Control buttons
+                this.startButton.addEventListener('click', () => this.start());
+                this.stopButton.addEventListener('click', () => this.emergencyStop());
+                
+                // Audio controls
+                this.volumeSlider.addEventListener('input', (e) => {
+                    if (this.volume) {
+                        this.volume.volume.value = this.dbFromPercent(parseInt(e.target.value));
+                    }
+                });
+                
+                this.reverbSlider.addEventListener('input', (e) => {
+                    if (this.reverb) {
+                        this.reverb.wet.value = parseInt(e.target.value) / 100;
+                    }
+                });
+                
+                // Handle browser tab visibility changes
+                document.addEventListener('visibilitychange', () => {
+                    if (document.hidden) {
+                        this.pauseAudio();
+                    } else if (this.isRunning) {
+                        this.resumeAudio();
+                    }
+                });
+                
+                // Handle page unload
+                window.addEventListener('beforeunload', () => {
+                    this.cleanup();
+                });
+                
+                // Handle window resize
+                window.addEventListener('resize', () => this.resizeCanvas());
+            }
+            
+            async initializeAudio() {
+                try {
+                    // Wait for user gesture to start audio context
+                    if (Tone.context.state !== 'running') {
+                        await Tone.start();
+                    }
+                    
+                    // Create audio chain: Synth -> Reverb -> Volume -> Output
+                    this.synth = new Tone.PolySynth(Tone.Synth, {
+                        oscillator: { type: 'sine' },
+                        envelope: {
+                            attack: 0.1,
+                            decay: 0.2,
+                            sustain: 0.8,
+                            release: 0.5
+                        }
+                    }).toDestination();
+                    
+                    this.reverb = new Tone.Reverb({
+                        roomSize: 0.8,
+                        dampening: 3000
+                    });
+                    
+                    this.volume = new Tone.Volume(this.dbFromPercent(70));
+                    
+                    // Connect audio chain
+                    this.synth.chain(this.reverb, this.volume, Tone.Destination);
+                    
+                    // Set initial reverb
+                    this.reverb.wet.value = 0.3;
+                    
+                } catch (error) {
+                    throw new Error(`Audio initialization failed: ${error.message}`);
+                }
+            }
+            
+            async initializeMediaPipe() {
+                try {
+                    this.hands = new Hands({
+                        locateFile: (file) => {
+                            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                        }
+                    });
+                    
+                    this.hands.setOptions({
+                        maxNumHands: 2,
+                        modelComplexity: 1,
+                        minDetectionConfidence: 0.7,
+                        minTrackingConfidence: 0.5
+                    });
+                    
+                    this.hands.onResults((results) => this.onHandResults(results));
+                    
+                } catch (error) {
+                    throw new Error(`MediaPipe initialization failed: ${error.message}`);
+                }
+            }
+            
+            async initializeCamera() {
+                try {
+                    // Try multiple camera resolutions as fallbacks
+                    const resolutions = [
+                        { width: 1280, height: 720 },
+                        { width: 960, height: 540 },
+                        { width: 640, height: 480 }
+                    ];
+                    
+                    let stream = null;
+                    for (const resolution of resolutions) {
+                        try {
+                            stream = await navigator.mediaDevices.getUserMedia({
+                                video: {
+                                    width: { ideal: resolution.width },
+                                    height: { ideal: resolution.height },
+                                    frameRate: { ideal: 30 }
+                                }
+                            });
+                            break;
+                        } catch (e) {
+                            console.warn(`Failed to get ${resolution.width}x${resolution.height} resolution`);
+                        }
+                    }
+                    
+                    if (!stream) {
+                        throw new Error('Failed to access camera with any resolution');
+                    }
+                    
+                    this.videoElement.srcObject = stream;
+                    
+                    return new Promise((resolve, reject) => {
+                        this.videoElement.onloadedmetadata = () => {
+                            this.resizeCanvas();
+                            this.camera = new Camera(this.videoElement, {
+                                onFrame: async () => {
+                                    if (this.hands && this.isRunning) {
+                                        await this.hands.send({ image: this.videoElement });
+                                    }
+                                },
+                                width: this.videoElement.videoWidth,
+                                height: this.videoElement.videoHeight
+                            });
+                            resolve();
+                        };
+                        
+                        this.videoElement.onerror = reject;
+                        
+                        // Timeout fallback
+                        setTimeout(() => reject(new Error('Video loading timeout')), 10000);
+                    });
+                    
+                } catch (error) {
+                    if (error.name === 'NotAllowedError') {
+                        throw new Error('Camera access denied. Please allow camera access and refresh the page.');
+                    } else if (error.name === 'NotFoundError') {
+                        throw new Error('No camera found. Please connect a camera and refresh the page.');
+                    } else {
+                        throw new Error(`Camera initialization failed: ${error.message}`);
+                    }
+                }
+            }
+            
+            resizeCanvas() {
+                if (this.videoElement.videoWidth && this.videoElement.videoHeight) {
+                    this.canvasElement.width = this.videoElement.videoWidth;
+                    this.canvasElement.height = this.videoElement.videoHeight;
+                }
+            }
+            
+            onHandResults(results) {
+                this.results = results;
+                
+                if (!this.isRunning) return;
+                
+                // Clear canvas
+                const ctx = this.canvasElement.getContext('2d');
+                ctx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
+                
+                // Reset hand states
+                this.handStates.left.detected = false;
+                this.handStates.right.detected = false;
+                
+                if (results.multiHandLandmarks && results.multiHandedness) {
+                    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                        const landmarks = results.multiHandLandmarks[i];
+                        const handedness = results.multiHandedness[i];
+                        const handType = handedness.label.toLowerCase();
+                        
+                        // Draw hand skeleton
+                        this.drawHandSkeleton(ctx, landmarks, handType);
+                        
+                        // Process hand gestures
+                        this.processHandGesture(landmarks, handType);
+                    }
+                }
+                
+                // Clean up notes for undetected hands
+                this.cleanupUndetectedHands();
+                
+                // Update UI
+                this.updateHandStatusDisplay();
+            }
+            
+            drawHandSkeleton(ctx, landmarks, handType) {
+                const color = handType === 'left' ? '#00ff00' : '#ff0000';
+                const mutedColor = handType === 'left' ? '#006600' : '#660000';
+                
+                const isMuted = this.handStates[handType].fist;
+                const drawColor = isMuted ? mutedColor : color;
+                
+                // Draw connections
+                ctx.strokeStyle = drawColor;
+                ctx.lineWidth = 2;
+                ctx.globalAlpha = isMuted ? 0.5 : 1.0;
+                
+                const connections = [
+                    [0,1],[1,2],[2,3],[3,4], // thumb
+                    [0,5],[5,6],[6,7],[7,8], // index
+                    [5,9],[9,10],[10,11],[11,12], // middle
+                    [9,13],[13,14],[14,15],[15,16], // ring
+                    [13,17],[17,18],[18,19],[19,20], // pinky
+                    [0,17] // palm
+                ];
+                
+                ctx.beginPath();
+                connections.forEach(([start, end]) => {
+                    const startPoint = landmarks[start];
+                    const endPoint = landmarks[end];
+                    ctx.moveTo(startPoint.x * this.canvasElement.width, startPoint.y * this.canvasElement.height);
+                    ctx.lineTo(endPoint.x * this.canvasElement.width, endPoint.y * this.canvasElement.height);
+                });
+                ctx.stroke();
+                
+                // Draw landmarks
+                ctx.fillStyle = drawColor;
+                landmarks.forEach((landmark, index) => {
+                    ctx.beginPath();
+                    ctx.arc(
+                        landmark.x * this.canvasElement.width,
+                        landmark.y * this.canvasElement.height,
+                        index === 8 ? 8 : 4, // Highlight index finger tip
+                        0, 2 * Math.PI
+                    );
+                    ctx.fill();
+                });
+                
+                ctx.globalAlpha = 1.0;
+            }
+            
+            processHandGesture(landmarks, handType) {
+                const state = this.handStates[handType];
+                state.detected = true;
+                state.confidence = 0.8; // Simplified confidence
+                
+                // Get index finger tip position (landmark 8)
+                const indexTip = landmarks[8];
+                state.x = indexTip.x;
+                state.y = indexTip.y;
+                
+                // Detect fist using finger joint analysis
+                const isFist = this.detectFist(landmarks);
+                const wasFist = state.fist;
+                state.fist = isFist;
+                
+                if (isFist) {
+                    // Mute hand - stop all notes for this hand
+                    this.stopHandNotes(handType);
+                    state.note = null;
+                } else {
+                    // Calculate note based on Y position and current scale
+                    const note = this.calculateNote(state.y);
+                    const tempo = this.calculateTempo(state.x);
+                    
+                    if (note !== state.note || wasFist) {
+                        // Note changed or hand unmuted
+                        this.stopHandNotes(handType);
+                        this.playNote(handType, note, tempo);
+                        state.note = note;
+                    }
+                }
+            }
+            
+            detectFist(landmarks) {
+                // Robust fist detection using finger joint analysis
+                const fingerTips = [4, 8, 12, 16, 20]; // Thumb, index, middle, ring, pinky tips
+                const fingerPips = [3, 6, 10, 14, 18]; // Finger PIP joints
+                const fingerMcps = [2, 5, 9, 13, 17]; // Finger MCP joints
+                
+                let closedFingers = 0;
+                
+                // Check each finger (skip thumb for more reliable detection)
+                for (let i = 1; i < fingerTips.length; i++) {
+                    const tip = landmarks[fingerTips[i]];
+                    const pip = landmarks[fingerPips[i]];
+                    const mcp = landmarks[fingerMcps[i]];
+                    
+                    // Check if finger is bent (tip is below PIP joint)
+                    if (tip.y > pip.y && pip.y > mcp.y) {
+                        closedFingers++;
+                    }
+                }
+                
+                // Fist detected if 3 or more fingers are closed
+                return closedFingers >= 3;
+            }
+            
+            calculateNote(y) {
+                // Map Y position (0-1) to musical notes
+                const currentScale = this.scales[this.scaleSelect.value];
+                const baseOctave = 4;
+                const noteRange = 24; // 2 octaves
+                
+                // Invert Y (higher position = higher pitch)
+                const invertedY = 1 - y;
+                const scaleIndex = Math.floor(invertedY * (noteRange / currentScale.length));
+                const octaveOffset = Math.floor(scaleIndex / currentScale.length);
+                const noteIndex = scaleIndex % currentScale.length;
+                
+                const midiNote = 60 + currentScale[noteIndex] + (octaveOffset * 12); // C4 = 60
+                return Tone.Frequency(midiNote, "midi").toNote();
+            }
+            
+            calculateTempo(x) {
+                // Map X position to tempo (0.5x to 4x speed)
+                return 0.5 + (x * 3.5);
+            }
+            
+            playNote(handType, note, tempo) {
+                if (!note || !this.synth) return;
+                
+                try {
+                    // Generate chord
+                    const chordType = this.chordSelect.value;
+                    const chordIntervals = this.chords[chordType];
+                    const baseFreq = Tone.Frequency(note).toFrequency();
+                    
+                    const chordNotes = chordIntervals.map(interval => {
+                        const freq = baseFreq * Math.pow(2, interval / 12);
+                        return Tone.Frequency(freq).toNote();
+                    });
+                    
+                    // Play chord
+                    this.synth.triggerAttack(chordNotes);
+                    
+                    // Store active notes for cleanup
+                    this.activeNotes.set(handType, {
+                        notes: chordNotes,
+                        startTime: Date.now()
+                    });
+                    
+                } catch (error) {
+                    console.warn(`Failed to play note: ${error.message}`);
+                }
+            }
+            
+            stopHandNotes(handType) {
+                const activeNote = this.activeNotes.get(handType);
+                if (activeNote && this.synth) {
+                    try {
+                        this.synth.triggerRelease(activeNote.notes);
+                    } catch (error) {
+                        console.warn(`Failed to stop notes: ${error.message}`);
+                    }
+                }
+                this.activeNotes.delete(handType);
+            }
+            
+            cleanupUndetectedHands() {
+                // Stop notes for hands that are no longer detected
+                ['left', 'right'].forEach(handType => {
+                    if (!this.handStates[handType].detected) {
+                        this.stopHandNotes(handType);
+                        this.handStates[handType].note = null;
+                        this.handStates[handType].fist = false;
+                    }
+                });
+            }
+            
+            updateHandStatusDisplay() {
+                // Update left hand status
+                const leftState = this.handStates.left;
+                if (leftState.detected) {
+                    this.leftHandStatus.style.display = 'block';
+                    this.leftHandNote.textContent = leftState.note || 'Muted';
+                    this.leftHandStatus.classList.toggle('muted', leftState.fist);
+                } else {
+                    this.leftHandStatus.style.display = 'none';
+                }
+                
+                // Update right hand status
+                const rightState = this.handStates.right;
+                if (rightState.detected) {
+                    this.rightHandStatus.style.display = 'block';
+                    this.rightHandNote.textContent = rightState.note || 'Muted';
+                    this.rightHandStatus.classList.toggle('muted', rightState.fist);
+                } else {
+                    this.rightHandStatus.style.display = 'none';
+                }
+            }
+            
+            async start() {
+                try {
+                    if (this.isRunning) return;
+                    
+                    // Ensure audio context is running
+                    if (Tone.context.state !== 'running') {
+                        await Tone.start();
+                    }
+                    
+                    // Start camera
+                    if (this.camera) {
+                        this.camera.start();
+                    }
+                    
+                    this.isRunning = true;
+                    this.updateButtonStates();
+                    this.hideLoadingOverlay();
+                    
+                } catch (error) {
+                    this.handleError('Failed to start instrument', error);
+                }
+            }
+            
+            emergencyStop() {
+                try {
+                    this.isRunning = false;
+                    
+                    // Stop camera
+                    if (this.camera) {
+                        this.camera.stop();
+                    }
+                    
+                    // Emergency audio cleanup - multiple failsafe mechanisms
+                    this.stopAllNotes();
+                    
+                    // Clear all hand states
+                    this.handStates.left.detected = false;
+                    this.handStates.right.detected = false;
+                    this.handStates.left.note = null;
+                    this.handStates.right.note = null;
+                    
+                    // Update UI
+                    this.updateButtonStates();
+                    this.updateHandStatusDisplay();
+                    this.showLoadingOverlay('Stopped', 'Click Start to resume');
+                    
+                } catch (error) {
+                    console.error('Emergency stop failed:', error);
+                    // Force audio context suspension as last resort
+                    if (Tone.context.state === 'running') {
+                        Tone.context.suspend();
+                    }
+                }
+            }
+            
+            stopAllNotes() {
+                // Multiple failsafe mechanisms for audio cleanup
+                try {
+                    // Method 1: Release all active notes
+                    this.activeNotes.forEach((noteData, handType) => {
+                        if (this.synth && noteData.notes) {
+                            this.synth.triggerRelease(noteData.notes);
+                        }
+                    });
+                    
+                    // Method 2: Release all notes on synth
+                    if (this.synth) {
+                        this.synth.releaseAll();
+                    }
+                    
+                    // Method 3: Clear active notes map
+                    this.activeNotes.clear();
+                    
+                    // Method 4: Clear any scheduled events
+                    if (Tone.Transport) {
+                        Tone.Transport.cancel();
+                    }
+                    
+                } catch (error) {
+                    console.warn('Audio cleanup error:', error);
+                }
+            }
+            
+            pauseAudio() {
+                if (this.synth) {
+                    this.synth.releaseAll();
+                    this.activeNotes.clear();
+                }
+            }
+            
+            resumeAudio() {
+                // Audio will resume naturally when hands are detected
+            }
+            
+            updateButtonStates() {
+                const indicator = this.startButton.querySelector('.status-indicator');
+                
+                if (this.isRunning) {
+                    this.startButton.textContent = 'Running...';
+                    this.startButton.disabled = true;
+                    this.startButton.style.background = '#34c759';
+                    indicator.classList.remove('inactive');
+                    indicator.classList.add('active');
+                    this.stopButton.style.display = 'block';
+                } else {
+                    this.startButton.innerHTML = '<span class="status-indicator inactive"></span>Start Instrument';
+                    this.startButton.disabled = false;
+                    this.startButton.style.background = '#007aff';
+                    this.stopButton.style.display = 'none';
+                }
+            }
+            
+            enableStartButton() {
+                this.startButton.disabled = false;
+                const indicator = this.startButton.querySelector('.status-indicator');
+                indicator.classList.remove('inactive');
+                indicator.classList.add('active');
+            }
+            
+            showLoadingOverlay(message, detail) {
+                this.loadingOverlay.style.display = 'flex';
+                this.loadingOverlay.querySelector('.status-message').textContent = message;
+                this.loadingOverlay.querySelector('.status-detail').textContent = detail;
+            }
+            
+            hideLoadingOverlay() {
+                this.loadingOverlay.style.display = 'none';
+            }
+            
+            updateLoadingStatus(message, detail) {
+                this.loadingOverlay.querySelector('.status-message').textContent = message;
+                this.loadingOverlay.querySelector('.status-detail').textContent = detail;
+            }
+            
+            handleError(message, error) {
+                console.error(message, error);
+                
+                // Display user-friendly error
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.innerHTML = `
+                    <strong>${message}</strong><br>
+                    ${error.message || error.toString()}
+                `;
+                
+                this.errorContainer.appendChild(errorDiv);
+                
+                // Update loading overlay
+                this.updateLoadingStatus('Error occurred', message);
+                
+                // Auto-remove error after 10 seconds
+                setTimeout(() => {
+                    if (errorDiv.parentNode) {
+                        errorDiv.parentNode.removeChild(errorDiv);
+                    }
+                }, 10000);
+            }
+            
+            dbFromPercent(percent) {
+                // Convert percentage to decibels (logarithmic scale)
+                if (percent <= 0) return -Infinity;
+                return 20 * Math.log10(percent / 100);
+            }
+            
+            cleanup() {
+                try {
+                    this.emergencyStop();
+                    
+                    // Stop camera stream
+                    if (this.videoElement.srcObject) {
+                        const tracks = this.videoElement.srcObject.getTracks();
+                        tracks.forEach(track => track.stop());
+                    }
+                    
+                    // Dispose audio resources
+                    if (this.synth) {
+                        this.synth.dispose();
+                    }
+                    if (this.reverb) {
+                        this.reverb.dispose();
+                    }
+                    if (this.volume) {
+                        this.volume.dispose();
+                    }
+                    
+                    // Close MediaPipe
+                    if (this.hands) {
+                        this.hands.close();
+                    }
+                    
+                } catch (error) {
+                    console.warn('Cleanup error:', error);
+                }
+            }
+        }
+        
+        // Initialize application when page loads
+        let instrument;
+        
+        window.addEventListener('load', () => {
+            try {
+                instrument = new HandGestureInstrument();
+            } catch (error) {
+                console.error('Failed to initialize instrument:', error);
+                document.getElementById('loadingOverlay').querySelector('.status-message').textContent = 'Initialization failed';
+                document.getElementById('loadingOverlay').querySelector('.status-detail').textContent = error.message;
+            }
+        });
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (instrument) {
+                instrument.cleanup();
+            }
+        });
+        
+        // Handle browser compatibility warnings
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            document.getElementById('loadingOverlay').querySelector('.status-message').textContent = 'Browser not supported';
+            document.getElementById('loadingOverlay').querySelector('.status-detail').textContent = 'Please use Chrome, Edge, or Firefox';
+        }
+        
+        if (!window.Tone) {
+            document.getElementById('loadingOverlay').querySelector('.status-message').textContent = 'Audio library failed to load';
+            document.getElementById('loadingOverlay').querySelector('.status-detail').textContent = 'Please check your internet connection and refresh';
+        }
+    </script>
+</body>
+</html>
